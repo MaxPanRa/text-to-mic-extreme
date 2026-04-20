@@ -4,7 +4,10 @@ setlocal
 cd /d "%~dp0"
 
 set "DIST_ENV=dist\.env"
+set "DIST_EXE=%CD%\dist\text-to-mic.exe"
 set "ENV_BACKUP=%TEMP%\text-to-mic-dist-env.bak"
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$exe=[System.IO.Path]::GetFullPath('%DIST_EXE%'); $procs=Get-Process text-to-mic -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }; if ($procs) { Write-Host 'Closing running packaged app before rebuild...'; $procs | Stop-Process -Force }"
 
 if exist "%DIST_ENV%" (
     echo Preserving existing dist\.env...

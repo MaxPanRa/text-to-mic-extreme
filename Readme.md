@@ -136,6 +136,7 @@ What the script does:
 
 - uses the project `.venv`
 - installs `pyinstaller` into `.venv` only if missing
+- closes a running `dist/text-to-mic.exe` before rebuilding, if needed
 - clears old `build/` and `dist/`
 - builds from `text-to-mic.spec`
 - preserves an existing `dist/.env` across rebuilds
@@ -230,6 +231,7 @@ Luego, si ya tienes `pyinstaller` instalado en la `.venv`, puedes usar:
 `dist/text-to-mic.exe`
 
 Si ya existe `dist/.env`, ambos scripts lo conservan automaticamente durante cada rebuild.
+Si el ejecutable empaquetado esta abierto, los scripts intentan cerrarlo antes de recompilar para evitar errores de archivo en uso.
 
 ### Nota para subirlo a Git
 

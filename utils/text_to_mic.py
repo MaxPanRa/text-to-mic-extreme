@@ -1630,6 +1630,11 @@ class TextToMic(tk.Tk):
         self.apply_compact_mode_layout()
         self.update_window_size()
         self._maintain_consistent_width()
+        self.update_idletasks()
+
+        # A second idle pass helps Tk settle the grid after switching window chrome/layout live.
+        self.after_idle(self.apply_compact_mode_layout)
+        self.after_idle(self._maintain_consistent_width)
 
         if hasattr(self, 'version_checker') and self.version_checker.notification_visible:
             self.after(100, self._reposition_version_notification)
@@ -2583,18 +2588,21 @@ class TextToMic(tk.Tk):
 
     def _maintain_consistent_width(self):
         """Ensure all input elements maintain consistent width after banner toggle."""
-        # Get the main frame width (accounting for padding)
-        main_frame_width = self.winfo_width() - 40  # subtract padding (20px on each side)
-        
         # Force update to ensure we have current dimensions
         self.update_idletasks()
         
-        # Configure column weights for main components to ensure they expand properly
-        for frame in [self.main_frame]:
-            if hasattr(frame, 'columnconfigure'):
-                # Make all columns in the frame expandable
-                for i in range(frame.grid_size()[0]):  # Get number of columns
-                    frame.columnconfigure(i, weight=1)
+        # Respect the active layout instead of forcing every column to equal width.
+        if hasattr(self, 'main_frame') and self.main_frame is not None:
+            if self.compact_mode_var.get():
+                self.main_frame.columnconfigure(0, weight=9, minsize=0)
+                self.main_frame.columnconfigure(1, weight=0, minsize=120)
+                self.main_frame.columnconfigure(2, weight=0, minsize=140)
+                self.main_frame.columnconfigure(3, weight=0, minsize=120)
+            else:
+                self.main_frame.columnconfigure(0, weight=1, minsize=0)
+                self.main_frame.columnconfigure(1, weight=1, minsize=0)
+                self.main_frame.columnconfigure(2, weight=0, minsize=0)
+                self.main_frame.columnconfigure(3, weight=0, minsize=0)
         
         # Ensure text input maintains its width
         if hasattr(self, 'text_input'):
