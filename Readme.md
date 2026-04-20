@@ -22,6 +22,7 @@ This fork adds a faster writer-focused workflow and packaging improvements on to
 - Voice labels for easier selection, especially on `Audio 1.5`
 - Root `.env` support for GUI, CLI, and packaged EXE
 - `build-exe.bat` for building the Windows executable with the included `.venv`
+- `rebuild-exe.bat` for fast rebuilds after the first setup
 
 ## About
 
@@ -125,10 +126,16 @@ Run:
 .\build-exe.bat
 ```
 
+For later rebuilds, when `pyinstaller` is already installed in `.venv`, you can use:
+
+```powershell
+.\rebuild-exe.bat
+```
+
 What the script does:
 
 - uses the project `.venv`
-- installs `pyinstaller` into `.venv` if missing
+- installs `pyinstaller` into `.venv` only if missing
 - clears old `build/` and `dist/`
 - builds from `text-to-mic.spec`
 
@@ -175,6 +182,7 @@ Este repositorio es un fork personalizado del proyecto original **Text to Mic** 
 - Etiquetas utiles para las voces
 - Uso de un solo `.env` en la raiz
 - `build-exe.bat` para generar el `.exe`
+- `rebuild-exe.bat` para recompilar rapido sin reinstalar dependencias
 
 ### Como configurar el `.env`
 
@@ -210,7 +218,13 @@ Si generas el ejecutable, el `.env` debe ir al lado de:
 .\build-exe.bat
 ```
 
-Ese script usa la `.venv` del proyecto, instala `pyinstaller` si hace falta y genera:
+Luego, si ya tienes `pyinstaller` instalado en la `.venv`, puedes usar:
+
+```powershell
+.\rebuild-exe.bat
+```
+
+`build-exe.bat` usa la `.venv` del proyecto, instala `pyinstaller` si hace falta y genera:
 
 `dist/text-to-mic.exe`
 

@@ -5,22 +5,16 @@ cd /d "%~dp0"
 
 if not exist ".venv\Scripts\python.exe" (
     echo [ERROR] Local virtual environment not found at .venv\Scripts\python.exe
-    echo Create or restore .venv before running this builder.
+    echo Create or restore .venv before running this rebuild script.
     exit /b 1
 )
 
-echo Checking PyInstaller in .venv...
 ".venv\Scripts\python.exe" -m pip show pyinstaller >nul 2>&1
 if errorlevel 1 (
-    echo PyInstaller not found. Installing into .venv...
-    ".venv\Scripts\python.exe" -m pip install pyinstaller
-    if errorlevel 1 (
-        echo [ERROR] Failed to install PyInstaller.
-        exit /b 1
-    )
-)
-if not errorlevel 1 (
-    echo PyInstaller already installed in .venv.
+    echo [ERROR] PyInstaller is not installed in .venv.
+    echo Run build-exe.bat first, or install it with:
+    echo .\.venv\Scripts\python.exe -m pip install pyinstaller
+    exit /b 1
 )
 
 if exist build (
@@ -33,7 +27,7 @@ if exist dist (
     rmdir /s /q dist
 )
 
-echo Building EXE from text-to-mic.spec...
+echo Rebuilding EXE from text-to-mic.spec...
 ".venv\Scripts\python.exe" -m PyInstaller --clean --noconfirm text-to-mic.spec
 if errorlevel 1 (
     echo [ERROR] PyInstaller build failed.
@@ -49,7 +43,7 @@ if exist "LICENSE.md" if exist "dist" (
 )
 
 echo.
-echo Build complete.
+echo Rebuild complete.
 echo EXE output: dist\text-to-mic.exe
 echo Put your .env next to the EXE if you want the packaged app to use OpenAI features.
 exit /b 0

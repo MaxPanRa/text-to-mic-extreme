@@ -60,13 +60,13 @@ class TextToMic(tk.Tk):
         
         # Fixed window dimensions for all states - DEFINED ONCE as class constants
         # These are the ONLY values that should be used throughout the application
-        self.BASE_WIDTH = 690
-        self.BASE_HEIGHT_WITH_BANNER = 890
-        self.BASE_HEIGHT_NO_BANNER = 730
-        self.COLLAPSED_HEIGHT_WITH_BANNER = 620
-        self.COLLAPSED_HEIGHT_NO_BANNER = 512
-        self.COMPACT_WIDTH = 930
-        self.COMPACT_HEIGHT = 88
+        self.BASE_WIDTH = 860
+        self.BASE_HEIGHT_WITH_BANNER = 970
+        self.BASE_HEIGHT_NO_BANNER = 800
+        self.COLLAPSED_HEIGHT_WITH_BANNER = 700
+        self.COLLAPSED_HEIGHT_NO_BANNER = 582
+        self.COMPACT_WIDTH = 1120
+        self.COMPACT_HEIGHT = 60
         
         # Initial window geometry - start with base size
         self.geometry(f"{self.BASE_WIDTH}x{self.BASE_HEIGHT_WITH_BANNER}")
@@ -108,22 +108,27 @@ class TextToMic(tk.Tk):
 
         # Cache for icons - will store loaded and resized icon images
         self.icon_cache = {}
+        self.normal_bg_color = "#f5f5f7"
+        self.compact_bg_color = "#1c2f45"
 
         self.style = ttk.Style(self)
         if self.tk.call('tk', 'windowingsystem') == 'aqua':
             self.style.theme_use('aqua')
+            self.style.configure('CompactDark.TFrame', background=self.compact_bg_color)
+            self.configure(background=self.normal_bg_color)
         else:
             # Create a custom theme instead of using 'clam'
             self.style.theme_use('clam')
             
             # Define a modern color scheme with clean light greys
-            bg_color = "#f5f5f7"       # Very light grey background
+            bg_color = self.normal_bg_color  # Very light grey background
             accent_color = "#e0e0e4"   # Slightly darker grey for accents
             text_color = "#333333"     # Dark grey for text
             button_bg = "#e8e8ec"      # Light grey for buttons
             
             # Configure default styles for various widgets
             self.style.configure('TFrame', background=bg_color)
+            self.style.configure('CompactDark.TFrame', background=self.compact_bg_color)
             self.style.configure('TLabel', background=bg_color, foreground=text_color)
             self.style.configure('TButton', background=button_bg, foreground=text_color)
             self.style.configure('TCheckbutton', background=bg_color, foreground=text_color)
@@ -566,10 +571,10 @@ class TextToMic(tk.Tk):
         self.device_frame = device_frame
 
         # Set fixed width for dropdown menus
-        dropdown_width = 30
+        dropdown_width = 34
 
         # Create a style for compact dropdowns
-        self.style.configure('Compact.TMenubutton', padding=(5, 2))
+        self.style.configure('Compact.TMenubutton', padding=(8, 4))
 
         # Voice and Tone Settings
         ttk.Label(voice_frame, text="Voice Settings", font=("Arial", 10, "bold")).grid(column=0, row=0, sticky=tk.W, pady=(0, 10), columnspan=2)
@@ -578,7 +583,7 @@ class TextToMic(tk.Tk):
         voice_frame.columnconfigure(1, weight=1)
         
         # Set fixed width for all labels
-        label_width = 35  # Adjust this value as needed for your UI
+        label_width = 31  # Keep labels aligned while freeing more width for controls
         
         # Initialize voice selection
         selected_speech_model = settings.get("speech_model", self.default_speech_model)
@@ -697,11 +702,11 @@ class TextToMic(tk.Tk):
         save_as_preset_button.grid(column=0, row=0, sticky=tk.E)
 
         # Text input area with proper spacing
-        self.text_input = tk.Text(main_frame, height=5, width=68)
+        self.text_input = tk.Text(main_frame, height=6, width=78)
         # Use white background for text input instead of the system background color
         text_color = self.style.lookup('TLabel', 'foreground')
         self.text_input.configure(bg="white", fg=text_color, insertbackground=text_color, wrap=tk.WORD, font=("Arial", 10))
-        self.text_input.grid(column=0, row=5, columnspan=2, pady=(0, 20), sticky="nsew")  # Proper spacing
+        self.text_input.grid(column=0, row=5, columnspan=6, pady=(0, 20), sticky="nsew")  # Proper spacing
         self.text_input.bind("<Return>", self.handle_text_input_return)
         self.text_input.bind("<KP_Enter>", self.handle_text_input_return)
 
@@ -739,10 +744,12 @@ class TextToMic(tk.Tk):
         # Button configuration
         self.recording = False  # State to check if currently recording
         self.is_playing = False  # State to check if audio is playing
+        self.idle_record_button_color = "#d9dee7"
+        self.idle_record_text_color = "#111111"
         
         # Create CTk buttons with proper rounded corners
-        button_height = 35
-        button_width = 250
+        button_height = 38
+        button_width = 260
         
         # Record button with CTkButton
         self.record_button = ctk.CTkButton(
@@ -751,24 +758,18 @@ class TextToMic(tk.Tk):
             corner_radius=20,
             height=button_height,
             width=button_width,
-            fg_color="#777777" if not self.has_api_key else "#058705",  # Grey if no API key, green if API key exists
+            fg_color=self.idle_record_button_color,
+            text_color=self.idle_record_text_color,
+            hover_color="#cfd6e1",
             font=("Arial", 13, "bold"),
             command=self.handle_record_button_click
         )
         self.record_button.grid(row=0, column=0, sticky="ew", padx=(0, 10))
 
         self.play_controls_frame = ttk.Frame(button_frame)
-        self.play_controls_frame.grid(row=0, column=1, sticky="e")
-
-        self.quick_speech_model_menu = ttk.OptionMenu(
-            self.play_controls_frame,
-            self.speech_model_var,
-            self.speech_model_var.get(),
-            *self.get_speech_model_labels(),
-            command=self.on_speech_model_change
-        )
-        self.quick_speech_model_menu.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-        self.quick_speech_model_menu.config(width=12, style='Compact.TMenubutton')
+        self.play_controls_frame.grid(row=0, column=1, sticky="ew")
+        self.play_controls_frame.columnconfigure(2, weight=1)
+        button_frame.columnconfigure(1, weight=1)
 
         self.quick_tone_menu = ttk.OptionMenu(
             self.play_controls_frame,
@@ -801,7 +802,7 @@ class TextToMic(tk.Tk):
             command=self.on_speech_model_change
         )
         self.compact_speech_model_menu.grid(row=5, column=1, sticky="e", padx=(0, 8), pady=(0, 0))
-        self.compact_speech_model_menu.config(width=11, style='Compact.TMenubutton')
+        self.compact_speech_model_menu.config(width=10, style='Compact.TMenubutton')
         self.compact_speech_model_menu.grid_remove()
 
         self.compact_tone_menu = ttk.OptionMenu(
@@ -818,11 +819,12 @@ class TextToMic(tk.Tk):
         self.compact_submit_button = ctk.CTkButton(
             main_frame,
             text="Play",
-            corner_radius=14,
-            height=34,
-            width=92,
+            corner_radius=16,
+            height=38,
+            width=110,
+            bg_color=self.compact_bg_color,
             fg_color="#058705",
-            font=("Arial", 12, "bold"),
+            font=("Arial", 13, "bold"),
             command=self.handle_submit_button_click
         )
         self.compact_submit_button.grid(row=5, column=3, sticky="e", padx=(8, 0), pady=(0, 0))
@@ -1558,37 +1560,61 @@ class TextToMic(tk.Tk):
         if hasattr(self, 'text_input') and self.text_input.winfo_exists():
             self.text_input.configure(height=1 if compact_mode else 5)
             if compact_mode:
-                self.text_input.grid_configure(column=0, row=5, columnspan=1, padx=(0, 8), pady=(0, 0), sticky="ew")
+                self.text_input.grid_configure(column=0, row=5, columnspan=1, padx=(0, 14), pady=(2, 2), sticky="ew")
             else:
+                self.text_input.configure(height=6)
                 self.text_input.grid_configure(column=0, row=5, columnspan=2, padx=0, pady=(0, 20), sticky="nsew")
+
+        if hasattr(self, 'main_frame') and self.main_frame is not None:
+            if compact_mode:
+                self.main_frame.columnconfigure(0, weight=9)
+                self.main_frame.columnconfigure(1, weight=0, minsize=120)
+                self.main_frame.columnconfigure(2, weight=0, minsize=140)
+                self.main_frame.columnconfigure(3, weight=0, minsize=120)
+                self.main_frame.configure(style='CompactDark.TFrame')
+                self.configure(background=self.compact_bg_color)
+            else:
+                self.main_frame.columnconfigure(0, weight=1, minsize=0)
+                self.main_frame.columnconfigure(1, weight=1, minsize=0)
+                self.main_frame.columnconfigure(2, weight=0, minsize=0)
+                self.main_frame.columnconfigure(3, weight=0, minsize=0)
+                self.main_frame.configure(style='TFrame')
+                self.configure(background=self.normal_bg_color)
 
         if hasattr(self, 'compact_tone_menu') and self.compact_tone_menu.winfo_exists():
             if compact_mode:
                 self.compact_tone_menu.grid()
+                self.compact_tone_menu.grid_configure(padx=(0, 10), pady=(2, 2))
             else:
                 self.compact_tone_menu.grid_remove()
+
+        if hasattr(self, 'quick_tone_menu') and self.quick_tone_menu.winfo_exists():
+            self.quick_tone_menu.grid_remove()
 
         if hasattr(self, 'compact_speech_model_menu') and self.compact_speech_model_menu.winfo_exists():
             if compact_mode:
                 self.compact_speech_model_menu.grid()
+                self.compact_speech_model_menu.grid_configure(padx=(0, 10), pady=(2, 2))
             else:
                 self.compact_speech_model_menu.grid_remove()
 
         if hasattr(self, 'compact_submit_button') and self.compact_submit_button.winfo_exists():
             if compact_mode:
                 self.compact_submit_button.grid()
+                self.compact_submit_button.grid_configure(padx=(8, 0), pady=(2, 2))
             else:
                 self.compact_submit_button.grid_remove()
 
-        compact_button_width = 220 if compact_mode else 250
+        compact_button_width = 220 if compact_mode else 260
         if hasattr(self, 'record_button') and self.record_button.winfo_exists():
             self.record_button.configure(width=compact_button_width)
 
         if hasattr(self, 'submit_button') and self.submit_button.winfo_exists():
             self.submit_button.configure(width=compact_button_width)
+            self.submit_button.grid_configure(column=1)
 
         if hasattr(self, 'main_frame') and self.main_frame is not None:
-            self.main_frame.configure(padding=10 if compact_mode else 20)
+            self.main_frame.configure(padding=12 if compact_mode else 20)
 
         if compact_mode:
             self.apply_always_on_top()
@@ -2221,7 +2247,7 @@ class TextToMic(tk.Tk):
             cancel_shortcut = "+".join(filter(None, settings["hotkeys"]["cancel_operation"]))
             
             # Update CTkButton for recording state, keeping shortcuts visible
-            self.record_button.configure(text=f"Stop and Insert", fg_color="#d32f2f")
+            self.record_button.configure(text=f"Stop and Insert", fg_color="#d32f2f", text_color="white")
             self.submit_button.configure(text=f"Stop and Play ({record_shortcut})", fg_color="#d32f2f")
 
             self.frames = []
@@ -2265,7 +2291,11 @@ class TextToMic(tk.Tk):
         play_shortcut = "+".join(filter(None, settings["hotkeys"]["play_last_audio"]))
         
         # Reset button appearance
-        self.record_button.configure(text=f"Record Mic ({record_shortcut})", fg_color="#058705")
+        self.record_button.configure(
+            text=f"Record Mic ({record_shortcut})",
+            fg_color=self.idle_record_button_color,
+            text_color=self.idle_record_text_color
+        )
         self.submit_button.configure(text=f"Play Audio ({play_shortcut})", fg_color="#058705")
 
     def save_recording(self, auto_play = False):
@@ -2470,15 +2500,17 @@ class TextToMic(tk.Tk):
             
             if is_playing:
                 # Set both buttons to show stop with cancel shortcut
-                self.record_button.configure(text=f"Stop Audio ({cancel_shortcut})", fg_color="#d32f2f")
+                self.record_button.configure(text=f"Stop Audio ({cancel_shortcut})", fg_color="#d32f2f", text_color="white")
                 self.submit_button.configure(text=f"Stop Audio ({cancel_shortcut})", fg_color="#d32f2f")
                 if hasattr(self, 'compact_submit_button') and self.compact_submit_button.winfo_exists():
                     self.compact_submit_button.configure(text="Stop", fg_color="#d32f2f")
             else:
                 # Reset buttons to normal state
-                # Use grey color for record button if no API key
-                record_color = "#777777" if not self.has_api_key else "#058705"
-                self.record_button.configure(text=f"Record Mic ({record_shortcut})", fg_color=record_color)
+                self.record_button.configure(
+                    text=f"Record Mic ({record_shortcut})",
+                    fg_color=self.idle_record_button_color,
+                    text_color=self.idle_record_text_color
+                )
                 self.submit_button.configure(text=f"Play Audio ({play_shortcut})", fg_color="#058705")
                 if hasattr(self, 'compact_submit_button') and self.compact_submit_button.winfo_exists():
                     self.compact_submit_button.configure(text="Play", fg_color="#058705")
