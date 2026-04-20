@@ -138,6 +138,7 @@ What the script does:
 - installs `pyinstaller` into `.venv` only if missing
 - clears old `build/` and `dist/`
 - builds from `text-to-mic.spec`
+- preserves an existing `dist/.env` across rebuilds
 
 Output:
 
@@ -227,6 +228,8 @@ Luego, si ya tienes `pyinstaller` instalado en la `.venv`, puedes usar:
 `build-exe.bat` usa la `.venv` del proyecto, instala `pyinstaller` si hace falta y genera:
 
 `dist/text-to-mic.exe`
+
+Si ya existe `dist/.env`, ambos scripts lo conservan automaticamente durante cada rebuild.
 
 ### Nota para subirlo a Git
 

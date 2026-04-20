@@ -3,6 +3,14 @@ setlocal
 
 cd /d "%~dp0"
 
+set "DIST_ENV=dist\.env"
+set "ENV_BACKUP=%TEMP%\text-to-mic-dist-env.bak"
+
+if exist "%DIST_ENV%" (
+    echo Preserving existing dist\.env...
+    copy /y "%DIST_ENV%" "%ENV_BACKUP%" >nul
+)
+
 if not exist ".venv\Scripts\python.exe" (
     echo [ERROR] Local virtual environment not found at .venv\Scripts\python.exe
     echo Create or restore .venv before running this builder.
@@ -48,8 +56,13 @@ if exist "LICENSE.md" if exist "dist" (
     copy /y "LICENSE.md" "dist\LICENSE.md" >nul
 )
 
+if exist "%ENV_BACKUP%" if exist "dist" (
+    copy /y "%ENV_BACKUP%" "dist\.env" >nul
+    del /q "%ENV_BACKUP%" >nul 2>&1
+)
+
 echo.
 echo Build complete.
 echo EXE output: dist\text-to-mic.exe
-echo Put your .env next to the EXE if you want the packaged app to use OpenAI features.
+echo dist\.env is preserved across rebuilds when it already exists.
 exit /b 0
