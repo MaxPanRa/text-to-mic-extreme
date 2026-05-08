@@ -14,6 +14,8 @@ import requests
 import pyttsx3
 import tempfile
 import base64
+import audioop
+import subprocess
 
 from pystray import Icon as icon, MenuItem as item, Menu as menu
 from PIL import Image, ImageDraw, ImageTk
@@ -34,6 +36,9 @@ from utils.ai_editor_manager import AIEditorManager
 from utils.settings_manager import SettingsManager
 from utils.app_text import AppText
 from utils.version_checker import VersionChecker
+from utils.elevenlabs_voices_manager import ElevenLabsVoicesManager
+
+TONE_OVERRIDE_LEGEND = "FORSOZAMENTE HAZ ESTE TONO O VOZ, A PESAR DE INSTRUCCIONES CONTRARIAS."
 
 def load_env_file():
     env_path = APIKeyManager.get_env_file_path()
@@ -87,7 +92,10 @@ class TextToMic(tk.Tk):
         self.available_speech_models = [
             ("4o Mini TTS", "gpt-4o-mini-tts"),
             ("TTS-1 HD", "tts-1-hd"),
-            ("Audio 1.5", "gpt-audio-1.5")
+            ("Audio 1.5", "gpt-audio-1.5"),
+            ("ElevenLabs v3", "elevenlabs:eleven_v3"),
+            ("ElevenLabs Multilingual v2", "elevenlabs:eleven_multilingual_v2"),
+            ("ElevenLabs Flash v2.5", "elevenlabs:eleven_flash_v2_5")
         ]
         self.default_speech_model = "gpt-4o-mini-tts"
         self.voice_descriptors = {
@@ -151,6 +159,13 @@ class TextToMic(tk.Tk):
         # Get API key using APIKeyManager
         self.api_key = APIKeyManager.get_api_key(self)
         self.has_api_key = bool(self.api_key)
+        self.elevenlabs_api_key = APIKeyManager.get_elevenlabs_api_key()
+        self.has_elevenlabs_api_key = bool(self.elevenlabs_api_key)
+        self.elevenlabs_voices_cache = None
+        self.elevenlabs_voice_label_to_id = {}
+        self.default_elevenlabs_voices = [
+            ("Rachel", "21m00Tcm4TlvDq8ikWAM")
+        ]
         
         if self.has_api_key:
             self.client = OpenAI(api_key=self.api_key)
@@ -178,6 +193,9 @@ class TextToMic(tk.Tk):
             value=self.get_speech_model_label(settings.get("speech_model", self.default_speech_model))
         )
         self.tone_intensity_var = tk.StringVar(value=(settings.get("tone_intensity", "strong") or "strong").lower())
+        self.tone_generation_language_var = tk.StringVar(
+            value=(settings.get("tone_generation_language", "english") or "english").lower()
+        )
         
         # Initialize auto_check_version before creating menu
         self.auto_check_version = tk.BooleanVar(value=settings.get("auto_check_version", True))
@@ -308,9 +326,11 @@ class TextToMic(tk.Tk):
         settings_menu = Menu(self.menubar, tearoff=0)
         self.menubar.add_cascade(label="Settings", menu=settings_menu)
         settings_menu.add_command(label="API Key", command=self.change_api_key)
+        settings_menu.add_command(label="ElevenLabs API Key", command=self.change_elevenlabs_api_key)
         settings_menu.add_command(label="AI Copyediting", command=self.show_ai_editor_settings)
         settings_menu.add_command(label="Keyboard Shortcuts", command=self.show_hotkey_settings)  
         settings_menu.add_command(label="Manage Tones", command=self.show_tone_presets_manager)
+        settings_menu.add_command(label="Manage ElevenLabs Voices", command=self.show_elevenlabs_voices_manager)
         settings_menu.add_command(label="Generate Tone with AI", command=self.generate_tone_preset_with_ai)
         settings_menu.add_command(label="Window Opacity", command=self.show_window_opacity_settings)
         speech_model_menu = Menu(settings_menu, tearoff=0)
@@ -327,6 +347,10 @@ class TextToMic(tk.Tk):
         tone_intensity_menu.add_radiobutton(label="Mild", value="mild", variable=self.tone_intensity_var, command=self.set_tone_intensity)
         tone_intensity_menu.add_radiobutton(label="Strong", value="strong", variable=self.tone_intensity_var, command=self.set_tone_intensity)
         tone_intensity_menu.add_radiobutton(label="Extreme", value="extreme", variable=self.tone_intensity_var, command=self.set_tone_intensity)
+        tone_language_menu = Menu(settings_menu, tearoff=0)
+        settings_menu.add_cascade(label="AI Tone Language", menu=tone_language_menu)
+        tone_language_menu.add_radiobutton(label="English", value="english", variable=self.tone_generation_language_var, command=self.set_tone_generation_language)
+        tone_language_menu.add_radiobutton(label="Español", value="spanish", variable=self.tone_generation_language_var, command=self.set_tone_generation_language)
         settings_menu.add_separator()
         
         # Add presets toggle with checkbox
@@ -383,8 +407,14 @@ class TextToMic(tk.Tk):
         context_tone_intensity_menu.add_radiobutton(label="Mild", value="mild", variable=self.tone_intensity_var, command=self.set_tone_intensity)
         context_tone_intensity_menu.add_radiobutton(label="Strong", value="strong", variable=self.tone_intensity_var, command=self.set_tone_intensity)
         context_tone_intensity_menu.add_radiobutton(label="Extreme", value="extreme", variable=self.tone_intensity_var, command=self.set_tone_intensity)
+        context_tone_language_menu = Menu(self.context_menu, tearoff=0)
+        self.context_menu.add_cascade(label="AI Tone Language", menu=context_tone_language_menu)
+        context_tone_language_menu.add_radiobutton(label="English", value="english", variable=self.tone_generation_language_var, command=self.set_tone_generation_language)
+        context_tone_language_menu.add_radiobutton(label="Español", value="spanish", variable=self.tone_generation_language_var, command=self.set_tone_generation_language)
         self.context_menu.add_command(label="Generate Tone with AI", command=self.generate_tone_preset_with_ai)
         self.context_menu.add_command(label="API Key", command=self.change_api_key)
+        self.context_menu.add_command(label="ElevenLabs API Key", command=self.change_elevenlabs_api_key)
+        self.context_menu.add_command(label="Manage ElevenLabs Voices", command=self.show_elevenlabs_voices_manager)
         self.context_menu.add_command(label="AI Copyediting", command=self.show_ai_editor_settings)
         self.context_menu.add_command(label="Keyboard Shortcuts", command=self.show_hotkey_settings)
         self.context_menu.add_separator()
@@ -402,6 +432,16 @@ class TextToMic(tk.Tk):
             self.api_key = new_key
             self.has_api_key = True
             self.client = OpenAI(api_key=self.api_key)
+            self.on_speech_model_change()
+            self.update_buttons_for_playback(False)
+
+    def change_elevenlabs_api_key(self):
+        """Change the ElevenLabs API key using APIKeyManager."""
+        new_key = APIKeyManager.change_elevenlabs_api_key(self)
+        if new_key:
+            self.elevenlabs_api_key = new_key
+            self.has_elevenlabs_api_key = True
+            self.elevenlabs_voices_cache = None
             self.on_speech_model_change()
             self.update_buttons_for_playback(False)
 
@@ -636,7 +676,7 @@ class TextToMic(tk.Tk):
             self.tone_var.set("None")
         
         # Add warning label for basic version
-        if not self.has_api_key:
+        if not self.has_api_key and not self.has_elevenlabs_api_key:
             warning_label = ttk.Label(voice_frame, 
                                     text="⚠️ Basic Version - Add API Key in Settings for full features", 
                                     foreground="orange",
@@ -988,9 +1028,21 @@ class TextToMic(tk.Tk):
                 return model_id
         return self.default_speech_model
 
+    def is_elevenlabs_speech_model(self, model_id=None):
+        """Return whether the selected speech model is provided by ElevenLabs."""
+        active_model = model_id or self.get_selected_speech_model()
+        return active_model.startswith("elevenlabs:")
+
+    def get_elevenlabs_model_id(self, model_id=None):
+        """Return the raw ElevenLabs model id without the local provider prefix."""
+        active_model = model_id or self.get_selected_speech_model()
+        return active_model.split(":", 1)[1] if active_model.startswith("elevenlabs:") else active_model
+
     def speech_model_supports_tone_instructions(self, model_id=None):
         """Return whether a speech model accepts instruction-based voice steering."""
         active_model = model_id or self.get_selected_speech_model()
+        if self.is_elevenlabs_speech_model(active_model):
+            return False
         return active_model not in {"tts-1", "tts-1-hd"}
 
     def get_openai_voices_for_model(self, model_id=None):
@@ -1002,10 +1054,177 @@ class TextToMic(tk.Tk):
 
     def get_default_voice_for_model(self, model_id=None):
         """Pick a sensible default voice for the active OpenAI speech model."""
+        if self.is_elevenlabs_speech_model(model_id):
+            voices = self.get_elevenlabs_voices()
+            return voices[0] if voices else "[System] Default"
+
         available = self.get_openai_voices_for_model(model_id)
         if 'alloy' in available:
             return self.get_voice_display_label('alloy')
         return self.get_voice_display_label(available[0]) if available else "[System] Default"
+
+    def get_elevenlabs_voices(self):
+        """Fetch ElevenLabs voices for the configured account."""
+        self.elevenlabs_voice_label_to_id = {}
+        if not self.has_elevenlabs_api_key:
+            return []
+
+        if self.elevenlabs_voices_cache is not None:
+            for label, voice_id in self.elevenlabs_voices_cache:
+                self.elevenlabs_voice_label_to_id[label] = voice_id
+            return [label for label, _voice_id in self.elevenlabs_voices_cache]
+
+        try:
+            response = requests.get(
+                "https://api.elevenlabs.io/v2/voices",
+                headers={"xi-api-key": self.elevenlabs_api_key},
+                params={"page_size": 100},
+                timeout=15
+            )
+            response.raise_for_status()
+            voices = response.json().get("voices", [])
+        except Exception as e:
+            print(f"Error loading ElevenLabs voices: {e}")
+            return self.get_default_elevenlabs_voice_labels()
+
+        label_counts = {}
+        voice_entries = []
+        for voice in voices:
+            voice_id = voice.get("voice_id")
+            name = (voice.get("name") or "Unnamed").strip()
+            if not voice_id:
+                continue
+
+            base_label = f"[ElevenLabs] {name}"
+            label_counts[base_label] = label_counts.get(base_label, 0) + 1
+            if label_counts[base_label] > 1:
+                label = f"{base_label} ({voice_id[:6]})"
+            else:
+                label = base_label
+
+            self.elevenlabs_voice_label_to_id[label] = voice_id
+            voice_entries.append((label, voice_id))
+
+        self.elevenlabs_voices_cache = voice_entries
+        return [label for label, _voice_id in voice_entries]
+
+    def fetch_elevenlabs_voice_details(self):
+        """Fetch full voice records from ElevenLabs."""
+        if not self.has_elevenlabs_api_key:
+            raise ValueError("Missing ElevenLabs API key.")
+
+        response = requests.get(
+            "https://api.elevenlabs.io/v2/voices",
+            headers={"xi-api-key": self.elevenlabs_api_key},
+            params={"page_size": 100},
+            timeout=30
+        )
+        if not response.ok:
+            raise ValueError(self.format_elevenlabs_error(response))
+
+        voices = response.json().get("voices", [])
+        self.elevenlabs_voice_label_to_id = {}
+        self.elevenlabs_voices_cache = []
+        for voice in voices:
+            voice_id = voice.get("voice_id")
+            name = (voice.get("name") or "Unnamed").strip()
+            if not voice_id:
+                continue
+            label = f"[ElevenLabs] {name}"
+            self.elevenlabs_voice_label_to_id[label] = voice_id
+            self.elevenlabs_voices_cache.append((label, voice_id))
+
+        return voices
+
+    def format_elevenlabs_error(self, response):
+        """Return a readable ElevenLabs API error."""
+        try:
+            detail = response.json().get("detail", response.text)
+            if isinstance(detail, dict):
+                message = detail.get("message") or detail.get("status") or str(detail)
+            else:
+                message = str(detail)
+        except ValueError:
+            message = response.text
+
+        return f"ElevenLabs error {response.status_code}: {message}"
+
+    def design_elevenlabs_voice(self, voice_description, preview_text, model_id, guidance_scale, should_enhance):
+        """Generate Voice Design previews from a text prompt."""
+        if not self.has_elevenlabs_api_key:
+            raise ValueError("Missing ElevenLabs API key.")
+
+        response = requests.post(
+            "https://api.elevenlabs.io/v1/text-to-voice/design",
+            headers={
+                "xi-api-key": self.elevenlabs_api_key,
+                "Content-Type": "application/json"
+            },
+            params={"output_format": "pcm_24000"},
+            json={
+                "voice_description": voice_description,
+                "model_id": model_id,
+                "text": preview_text,
+                "auto_generate_text": False,
+                "guidance_scale": guidance_scale,
+                "should_enhance": should_enhance,
+                "stream_previews": False
+            },
+            timeout=120
+        )
+        if not response.ok:
+            raise ValueError(self.format_elevenlabs_error(response))
+
+        previews = response.json().get("previews", [])
+        if not previews:
+            raise ValueError("ElevenLabs did not return voice previews.")
+        return previews
+
+    def create_elevenlabs_voice_from_preview(
+        self,
+        voice_name,
+        voice_description,
+        generated_voice_id,
+        played_not_selected_voice_ids=None
+    ):
+        """Save a generated Voice Design preview as an ElevenLabs voice."""
+        if not self.has_elevenlabs_api_key:
+            raise ValueError("Missing ElevenLabs API key.")
+
+        payload = {
+            "voice_name": voice_name,
+            "voice_description": voice_description,
+            "generated_voice_id": generated_voice_id
+        }
+        if played_not_selected_voice_ids:
+            payload["played_not_selected_voice_ids"] = played_not_selected_voice_ids
+
+        response = requests.post(
+            "https://api.elevenlabs.io/v1/text-to-voice",
+            headers={
+                "xi-api-key": self.elevenlabs_api_key,
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=60
+        )
+        if not response.ok:
+            raise ValueError(self.format_elevenlabs_error(response))
+
+        created_voice = response.json()
+        self.elevenlabs_voices_cache = None
+        return created_voice
+
+    def get_default_elevenlabs_voice_labels(self):
+        """Return public ElevenLabs fallback voices when account voice listing is unavailable."""
+        voice_entries = []
+        for name, voice_id in self.default_elevenlabs_voices:
+            label = f"[ElevenLabs] {name}"
+            self.elevenlabs_voice_label_to_id[label] = voice_id
+            voice_entries.append((label, voice_id))
+
+        self.elevenlabs_voices_cache = voice_entries
+        return [label for label, _voice_id in voice_entries]
 
     def get_voice_display_label(self, voice_id):
         """Return a human-friendly label for a built-in voice."""
@@ -1021,6 +1240,8 @@ class TextToMic(tk.Tk):
         """Extract the raw voice id from a display label."""
         if not voice_label or voice_label.startswith("[System]"):
             return voice_label
+        if voice_label.startswith("[ElevenLabs]"):
+            return self.elevenlabs_voice_label_to_id.get(voice_label, voice_label)
 
         return voice_label.split(" - ", 1)[0].strip()
 
@@ -1075,7 +1296,12 @@ class TextToMic(tk.Tk):
             return
 
         selected_model = self.get_selected_speech_model()
-        if not self.has_api_key:
+        if self.is_elevenlabs_speech_model(selected_model):
+            if not self.has_elevenlabs_api_key:
+                hint = "ElevenLabs speech models require an ElevenLabs API key. System voices still work without one."
+            else:
+                hint = "ElevenLabs voices are loaded from your account. Tone presets are only sent to OpenAI instruction-capable models."
+        elif not self.has_api_key:
             hint = "OpenAI speech models require an API key. System voices still work without one."
         elif selected_model == "tts-1-hd":
             hint = "TTS-1 HD prioritizes cleaner output, but it ignores tone instructions and tone presets."
@@ -1133,6 +1359,37 @@ class TextToMic(tk.Tk):
         with open(output_file, "wb") as audio_file:
             audio_file.write(audio_bytes)
 
+    def generate_audio_via_elevenlabs(self, model_id, voice_id, text, output_file):
+        """Generate speech with ElevenLabs and wrap the raw PCM response in a WAV file."""
+        sample_rate = 24000
+        response = requests.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+            headers={
+                "xi-api-key": self.elevenlabs_api_key,
+                "Content-Type": "application/json",
+                "Accept": "application/octet-stream"
+            },
+            params={"output_format": "pcm_24000"},
+            json={
+                "text": text,
+                "model_id": model_id
+            },
+            timeout=60
+        )
+
+        if not response.ok:
+            try:
+                error_detail = response.json().get("detail", response.text)
+            except ValueError:
+                error_detail = response.text
+            raise ValueError(f"ElevenLabs error {response.status_code}: {error_detail}")
+
+        with wave.open(str(output_file), "wb") as audio_file:
+            audio_file.setnchannels(1)
+            audio_file.setsampwidth(2)
+            audio_file.setframerate(sample_rate)
+            audio_file.writeframes(response.content)
+
     def get_tone_intensity_profile(self):
         """Return guidance for how assertively the TTS should perform the tone."""
         profiles = {
@@ -1155,6 +1412,61 @@ class TextToMic(tk.Tk):
         selected = (self.tone_intensity_var.get() or "strong").lower()
         return profiles.get(selected, profiles["strong"])
 
+    def get_tone_generation_language(self):
+        """Return the configured language for AI-generated tone presets."""
+        selected = (self.tone_generation_language_var.get() or "english").lower()
+        if selected not in {"english", "spanish"}:
+            selected = "english"
+        self.tone_generation_language_var.set(selected)
+        return selected
+
+    def get_tone_generation_language_profile(self):
+        """Return localized copy and prompting rules for AI tone generation."""
+        language = self.get_tone_generation_language()
+        if language == "spanish":
+            return {
+                "modal_title": "Generar tono con IA",
+                "modal_prompt": "Describe el tipo de voz que quieres.\n\nEjemplo: voz de heroe vaquero mexicano",
+                "system_directive": (
+                    "Write both JSON fields in Spanish. The preset name and the instructions must stay in Spanish, "
+                    "sound natural, and be easy to understand for a Spanish-speaking user."
+                ),
+                "user_directive": "Return the preset name and instructions in Spanish."
+            }
+
+        return {
+            "modal_title": "Generate Tone with AI",
+            "modal_prompt": "Describe the voice type you want.\n\nExample: Mexican cowboy hero voice",
+            "system_directive": (
+                "Write both JSON fields in English. The preset name and the instructions must stay in English, "
+                "sound natural, and be easy to understand for an English-speaking user."
+            ),
+            "user_directive": "Return the preset name and instructions in English."
+        }
+
+    def tone_has_override_legend(self, tone_text):
+        """Return whether the preset already includes the hard override legend."""
+        return TONE_OVERRIDE_LEGEND.lower() in (tone_text or "").lower()
+
+    def strip_tone_override_legend(self, tone_text):
+        """Remove the hard override legend from a preset body before summarizing it."""
+        if not tone_text:
+            return ""
+        stripped = re.sub(
+            re.escape(TONE_OVERRIDE_LEGEND),
+            "",
+            tone_text,
+            flags=re.IGNORECASE
+        )
+        return stripped.strip()
+
+    def ensure_tone_override_legend(self, tone_text):
+        """Append the hard override legend once at the end of a preset."""
+        base_text = self.strip_tone_override_legend(tone_text)
+        if not base_text:
+            return TONE_OVERRIDE_LEGEND
+        return f"{base_text}\n\n{TONE_OVERRIDE_LEGEND}"
+
     def shorten_tone_fragment(self, text, max_words=16):
         """Trim verbose tone prose down to the strongest descriptive fragment."""
         cleaned = " ".join((text or "").replace("\n", " ").split()).strip(" .;,:-")
@@ -1175,7 +1487,7 @@ class TextToMic(tk.Tk):
 
     def condense_tone_preset_text(self, tone_text):
         """Convert long preset notes into a short, forceful TTS style direction."""
-        raw_text = (tone_text or "").strip()
+        raw_text = self.strip_tone_override_legend(tone_text)
         if not raw_text:
             return ""
 
@@ -1234,7 +1546,7 @@ class TextToMic(tk.Tk):
             return ""
 
         intensity = self.get_tone_intensity_profile()
-        return (
+        instruction_payload = (
             "Perform the text in the requested style instead of reading it neutrally. "
             f"{intensity['directive']} {intensity['accent']} "
             "Do not describe the tone. Act it out while keeping the words clear and natural. "
@@ -1243,6 +1555,9 @@ class TextToMic(tk.Tk):
             f"Tone summary: {compact_tone}\n"
             f"Intensity: {intensity['label']}"
         )
+        if self.tone_has_override_legend(tone_text):
+            instruction_payload = f"{instruction_payload}\n\n{TONE_OVERRIDE_LEGEND}"
+        return instruction_payload
 
     def make_unique_tone_name(self, base_name):
         """Create a unique tone preset name."""
@@ -1319,9 +1634,10 @@ class TextToMic(tk.Tk):
             )
             return
 
+        language_profile = self.get_tone_generation_language_profile()
         tone_request = self.prompt_string_modal(
-            "Generate Tone with AI",
-            "Describe the voice type you want.\n\nExample: voz de heroe vaquero mexicano"
+            language_profile["modal_title"],
+            language_profile["modal_prompt"]
         )
 
         if not tone_request:
@@ -1341,7 +1657,8 @@ class TextToMic(tk.Tk):
                             "\"name\" and \"instructions\". The name should be short, memorable, and suitable "
                             "for a preset dropdown. The instructions must be 1 to 3 punchy sentences, written "
                             "as direct performance guidance for a text-to-speech model. Avoid section headers, "
-                            "rubrics, bullet points, or long explanations. Make the voice style easy to hear."
+                            "rubrics, bullet points, or long explanations. Make the voice style easy to hear. "
+                            f"{language_profile['system_directive']}"
                         )
                     },
                     {
@@ -1349,7 +1666,8 @@ class TextToMic(tk.Tk):
                         "content": (
                             "Create a spoken tone preset for this request: "
                             f"{tone_request}\n\n"
-                            "Make the result vivid, performable, and noticeably stylized."
+                            "Make the result vivid, performable, and noticeably stylized. "
+                            f"{language_profile['user_directive']}"
                         )
                     }
                 ],
@@ -1360,9 +1678,11 @@ class TextToMic(tk.Tk):
             content = response.choices[0].message.content or ""
             preset_data = self.coerce_tone_preset_data(content, tone_request)
             preset_name = self.make_unique_tone_name(preset_data.get("name", tone_request))
-            preset_instructions = self.condense_tone_preset_text((preset_data.get("instructions") or "").strip())
+            preset_instructions = self.ensure_tone_override_legend(
+                (preset_data.get("instructions") or "").strip()
+            )
 
-            if not preset_instructions:
+            if not self.strip_tone_override_legend(preset_instructions):
                 raise ValueError("AI response did not include preset instructions.")
 
             self.tone_presets[preset_name] = preset_instructions
@@ -1449,6 +1769,13 @@ class TextToMic(tk.Tk):
 
         settings = self.load_settings()
         settings["tone_intensity"] = selected
+        self.save_settings_to_JSON(settings)
+
+    def set_tone_generation_language(self):
+        """Persist the language used for AI-generated tone presets."""
+        selected = self.get_tone_generation_language()
+        settings = self.load_settings()
+        settings["tone_generation_language"] = selected
         self.save_settings_to_JSON(settings)
 
     def set_speech_model_from_menu(self):
@@ -1782,6 +2109,163 @@ class TextToMic(tk.Tk):
         else:
             return Path(filename)  # Default to current directory for non-macOS systems
 
+    def synthesize_system_tts_to_file(self, text, voice_name, output_file):
+        """Generate a system TTS WAV without letting SAPI freeze the main app."""
+        if platform.system() == "Windows":
+            return self.synthesize_windows_tts_to_file(text, voice_name, output_file)
+
+        engine = pyttsx3.init()
+        try:
+            engine.setProperty('rate', 150)
+            for voice in engine.getProperty('voices'):
+                if voice.name == voice_name:
+                    engine.setProperty('voice', voice.id)
+                    break
+
+            engine.save_to_file(text, str(output_file))
+            engine.runAndWait()
+        finally:
+            try:
+                engine.stop()
+            except Exception:
+                pass
+
+        output_path = Path(output_file)
+        if not output_path.exists() or output_path.stat().st_size == 0:
+            raise ValueError("System TTS did not create an audio file.")
+
+        with wave.open(str(output_path), 'rb') as wf:
+            if wf.getnframes() <= 0:
+                raise ValueError("System TTS created an empty audio file.")
+
+    def synthesize_windows_tts_to_file(self, text, voice_name, output_file):
+        """Use Windows System.Speech in a child process to avoid pyttsx3/SAPI hangs."""
+        output_path = Path(output_file).resolve()
+        payload = {
+            "text": text,
+            "voice_name": voice_name,
+            "output_file": str(output_path)
+        }
+
+        payload_path = None
+        script_path = None
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as payload_file:
+                json.dump(payload, payload_file)
+                payload_path = payload_file.name
+
+            script = r"""
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$PayloadPath
+)
+$ErrorActionPreference = 'Stop'
+$payload = Get-Content -LiteralPath $PayloadPath -Raw -Encoding UTF8 | ConvertFrom-Json
+Add-Type -AssemblyName System.Speech
+$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer
+try {
+    $synth.Rate = 0
+    if ($payload.voice_name -and $payload.voice_name -ne 'Default') {
+        try {
+            $synth.SelectVoice($payload.voice_name)
+        }
+        catch {
+            $shortName = ($payload.voice_name -replace '\s+-\s+.*$', '')
+            $synth.SelectVoice($shortName)
+        }
+    }
+    $synth.SetOutputToWaveFile($payload.output_file)
+    $synth.Speak($payload.text)
+}
+finally {
+    $synth.Dispose()
+}
+"""
+            with tempfile.NamedTemporaryFile("w", suffix=".ps1", delete=False, encoding="utf-8") as script_file:
+                script_file.write(script)
+                script_path = script_file.name
+
+            startupinfo = None
+            creationflags = 0
+            if hasattr(subprocess, "STARTUPINFO"):
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = 0
+                creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+            result = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    script_path,
+                    payload_path
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                startupinfo=startupinfo,
+                creationflags=creationflags
+            )
+            if result.returncode != 0:
+                error_text = (result.stderr or result.stdout or "Unknown Windows TTS error").strip()
+                raise ValueError(error_text)
+        except subprocess.TimeoutExpired as e:
+            raise ValueError("Windows system voice generation timed out.") from e
+        finally:
+            if payload_path:
+                try:
+                    os.remove(payload_path)
+                except OSError:
+                    pass
+            if script_path:
+                try:
+                    os.remove(script_path)
+                except OSError:
+                    pass
+
+        if not output_path.exists() or output_path.stat().st_size == 0:
+            raise ValueError("Windows system TTS did not create an audio file.")
+
+        with wave.open(str(output_path), 'rb') as wf:
+            if wf.getnframes() <= 0:
+                raise ValueError("Windows system TTS created an empty audio file.")
+
+    def normalize_wav_sample_rate(self, source_file, target_sample_rate, output_file):
+        """Resample simple PCM WAV files with stdlib tools for device compatibility."""
+        source_path = Path(source_file)
+        output_path = Path(output_file)
+        target_sample_rate = int(target_sample_rate or 44100)
+
+        with wave.open(str(source_path), 'rb') as source:
+            channels = source.getnchannels()
+            sample_width = source.getsampwidth()
+            source_sample_rate = source.getframerate()
+            frames = source.readframes(source.getnframes())
+
+        if source_sample_rate == target_sample_rate:
+            return source_path
+
+        converted_frames, _state = audioop.ratecv(
+            frames,
+            sample_width,
+            channels,
+            source_sample_rate,
+            target_sample_rate,
+            None
+        )
+
+        with wave.open(str(output_path), 'wb') as output:
+            output.setnchannels(channels)
+            output.setsampwidth(sample_width)
+            output.setframerate(target_sample_rate)
+            output.writeframes(converted_frames)
+
+        return output_path
+
 
     def submit_text(self, play_text = None):
         print(f"submit text self recording: {self.recording}")
@@ -1810,10 +2294,6 @@ class TextToMic(tk.Tk):
         if is_system_voice:
             # Use system TTS
             system_voice_name = selected_voice.replace("[System] ", "")
-            for voice in self.system_voices:
-                if voice.name == system_voice_name:
-                    self.engine.setProperty('voice', voice.id)
-                    break
             
             # Convert device names to indices
             primary_index = self.available_devices.get(self.device_index.get(), None)
@@ -1826,20 +2306,28 @@ class TextToMic(tk.Tk):
             try:
                 # Create a proper temporary file with a simple name in current directory
                 temp_filename = "temp_speech_output.wav"
+                playback_filename = "temp_speech_output_playback.wav"
                 
                 # Generate audio using system TTS
-                self.engine.save_to_file(text, temp_filename)
-                self.engine.runAndWait()
+                self.synthesize_system_tts_to_file(text, system_voice_name, temp_filename)
+
+                primary_device_info = self.get_device_info(primary_index)
+                target_sample_rate = int(primary_device_info['defaultSampleRate']) if primary_device_info else 44100
+                playback_file = self.normalize_wav_sample_rate(
+                    temp_filename,
+                    target_sample_rate,
+                    playback_filename
+                )
                 
                 # Store as last audio file for replay
-                self.last_audio_file = temp_filename
+                self.last_audio_file = playback_file
                 
                 # Play the generated audio
-                if primary_index and secondary_index != "None" and secondary_index is not None:
-                    self.play_audio_multiplexed([temp_filename, temp_filename],
+                if primary_index is not None and secondary_index != "None" and secondary_index is not None:
+                    self.play_audio_multiplexed([playback_file, playback_file],
                                               [primary_index, secondary_index])
                 else:
-                    self.play_audio_multiplexed([temp_filename],
+                    self.play_audio_multiplexed([playback_file],
                                               [primary_index])
                 
                 # We'll leave the file for potential replay rather than deleting it immediately
@@ -1847,14 +2335,31 @@ class TextToMic(tk.Tk):
                 messagebox.showerror("TTS Error", f"Failed to generate or play system voice: {str(e)}")
                 
         else:
-            # Use OpenAI TTS
-            if not self.has_api_key:
+            # Use cloud TTS
+            speech_model = self.get_selected_speech_model()
+
+            if self.is_elevenlabs_speech_model(speech_model):
+                if not self.has_elevenlabs_api_key:
+                    messagebox.showerror(
+                        "ElevenLabs API Key Required",
+                        "An ElevenLabs API Key is required to use ElevenLabs voices.\n\n"
+                        "Please add your ElevenLabs API key in Settings."
+                    )
+                    return
+
+                if not selected_voice.startswith("[ElevenLabs]"):
+                    messagebox.showerror(
+                        "ElevenLabs Voice Required",
+                        "Please select an ElevenLabs voice for the selected ElevenLabs speech model."
+                    )
+                    return
+            elif not self.has_api_key:
                 messagebox.showerror("API Key Required", 
                                    "An OpenAI API Key is required for speech to text or to use OpenAI voices.\n\n"
                                    "Please add your API key in Settings.\n\n"
                                    "Note: You can still use text to speech with the system voices only.")
                 return
-                
+
             # Check if a tone preset is selected and add it to the text
             selected_tone_name = self.tone_var.get()
             
@@ -1877,10 +2382,16 @@ class TextToMic(tk.Tk):
                 return
             
             try:
-                speech_model = self.get_selected_speech_model()
                 self.last_audio_file = self.get_audio_file_path("last_output.wav")
 
-                if speech_model == "gpt-audio-1.5":
+                if self.is_elevenlabs_speech_model(speech_model):
+                    self.generate_audio_via_elevenlabs(
+                        self.get_elevenlabs_model_id(speech_model),
+                        selected_voice_id,
+                        text,
+                        str(self.last_audio_file)
+                    )
+                elif speech_model == "gpt-audio-1.5":
                     self.generate_audio_via_chat_completions(
                         speech_model,
                         selected_voice_id,
@@ -1905,7 +2416,7 @@ class TextToMic(tk.Tk):
                     response.stream_to_file(str(self.last_audio_file))
 
                 #Play to either two or a single stream
-                if primary_index and secondary_index != "None" and secondary_index is not None:
+                if primary_index is not None and secondary_index != "None" and secondary_index is not None:
                     self.play_audio_multiplexed([self.last_audio_file, self.last_audio_file],
                                                 [primary_index, secondary_index])
                 else:
@@ -2119,7 +2630,7 @@ class TextToMic(tk.Tk):
             secondary_index = self.available_devices.get(self.device_index_2.get(), None) if self.device_index_2.get() != "None" else None
 
             # Check if a secondary device is selected
-            if primary_index and secondary_index != "None" and secondary_index is not None:
+            if primary_index is not None and secondary_index != "None" and secondary_index is not None:
                 self.play_audio_multiplexed([self.last_audio_file, self.last_audio_file],
                                             [primary_index, secondary_index])
             else:
@@ -2379,6 +2890,16 @@ class TextToMic(tk.Tk):
     def show_tone_presets_manager(self):
         """Show the tone presets manager dialog."""
         TonePresetsManager(self)
+
+    def show_elevenlabs_voices_manager(self):
+        """Show the ElevenLabs voices manager dialog."""
+        if not self.has_elevenlabs_api_key:
+            messagebox.showerror(
+                "ElevenLabs API Key Required",
+                "Please add your ElevenLabs API key in Settings before managing ElevenLabs voices."
+            )
+            return
+        ElevenLabsVoicesManager(self)
     
     def load_current_tone_from_settings(self):
         """Load the current tone preset from settings."""
@@ -2614,7 +3135,9 @@ class TextToMic(tk.Tk):
     def get_available_voices(self, speech_model=None):
         """Get list of available voices, including system voices if no API key."""
         voices = []
-        if self.has_api_key:
+        if self.is_elevenlabs_speech_model(speech_model):
+            voices.extend(self.get_elevenlabs_voices())
+        elif self.has_api_key:
             # Add OpenAI voices
             voices.extend(
                 self.get_voice_display_label(voice_id)

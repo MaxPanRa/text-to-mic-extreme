@@ -33,6 +33,7 @@ class SettingsManager:
             "send_with_ctrl_enter": False,
             "speech_model": "gpt-4o-mini-tts",
             "tone_intensity": "strong",
+            "tone_generation_language": "english",
             "current_tone": "None",
             "input_device": "Default",
             "primary_device": "Select Device",

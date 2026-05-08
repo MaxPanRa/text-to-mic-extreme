@@ -18,7 +18,7 @@ This fork adds a faster writer-focused workflow and packaging improvements on to
 - Quick tone selector next to `Play`
 - AI-generated tone presets saved automatically into the app
 - Stronger tone prompting and tone intensity control
-- Speech model switching between `gpt-4o-mini-tts`, `tts-1-hd`, and `gpt-audio-1.5`
+- Speech model switching between OpenAI and ElevenLabs speech models
 - Voice labels for easier selection, especially on `Audio 1.5`
 - Root `.env` support for GUI, CLI, and packaged EXE
 - `build-exe.bat` for building the Windows executable with the included `.venv`
@@ -54,6 +54,7 @@ You can start from `.env.example`:
 
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
+ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
 ```
 
 For local development, the expected location is:
@@ -110,13 +111,14 @@ The CLI also reads the same root `.env`:
 - AI tone generation from natural language requests
 - Auto-save and auto-select for newly generated tones
 - Tone intensity settings to make style instructions stronger
-- Faster switching between `gpt-4o-mini-tts`, `tts-1-hd`, and `gpt-audio-1.5`
+- Faster switching between OpenAI and ElevenLabs speech models
 
 ## Notes About Speech Models
 
 - `gpt-4o-mini-tts`: best when tone instructions matter most
 - `tts-1-hd`: clean output, but it does not support instruction-based tone control
 - `gpt-audio-1.5`: more natural and expressive, but it needs stricter prompting so it repeats your text instead of replying conversationally
+- ElevenLabs models: load voices from your ElevenLabs account and use the `ELEVENLABS_API_KEY` value from `.env`
 
 ## Build The EXE
 
@@ -150,7 +152,7 @@ The build script also copies these helper files into `dist/`:
 - `LICENSE.md`
 - `.env.example`
 
-After building, create or copy your real `.env` next to the EXE if you want OpenAI voices to work in the packaged app.
+After building, create or copy your real `.env` next to the EXE if you want OpenAI or ElevenLabs voices to work in the packaged app.
 
 ## Git / Fork Notes
 
@@ -180,7 +182,7 @@ Este repositorio es un fork personalizado del proyecto original **Text to Mic** 
 - Selector rapido de tono junto a `Play`
 - Generacion de tonos con IA
 - Mayor intensidad de tonos
-- Cambio rapido entre `gpt-4o-mini-tts`, `tts-1-hd` y `gpt-audio-1.5`
+- Cambio rapido entre modelos de voz de OpenAI y ElevenLabs
 - Etiquetas utiles para las voces
 - Uso de un solo `.env` en la raiz
 - `build-exe.bat` para generar el `.exe`
@@ -200,6 +202,7 @@ Contenido:
 
 ```env
 OPENAI_API_KEY=tu_api_key_aqui
+ELEVENLABS_API_KEY=tu_api_key_de_elevenlabs_aqui
 ```
 
 Tambien puedes copiar el archivo `.env.example`.

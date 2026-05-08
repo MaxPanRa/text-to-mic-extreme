@@ -25,38 +25,73 @@ class APIKeyManager:
         app_support_path = home / 'Library' / 'Application Support' / 'scorchsoft-text-to-mic'
         app_support_path.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
         return app_support_path
-    
+
     @staticmethod
-    def save_api_key_mac(api_key):
-        """Save the API key using the shared root .env path on macOS."""
-        return APIKeyManager.save_api_key(api_key)
-    
+    def get_env_value(key):
+        """Read a single value from the root .env file or process environment."""
+        value = os.getenv(key)
+        if value:
+            return value
+
+        env_path = APIKeyManager.get_env_file_path()
+        if env_path.exists():
+            with open(env_path, 'r') as f:
+                for line in f:
+                    if line.startswith(f'{key}='):
+                        return line.strip().split('=', 1)[1]
+        return None
+
     @staticmethod
-    def save_api_key(api_key):
-        """Save the API key to the root .env file."""
+    def save_env_value(key, value):
+        """Save one .env key while preserving other keys."""
         try:
             env_path = APIKeyManager.get_env_file_path()
             env_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(env_path, 'w') as f:
-                f.write(f"OPENAI_API_KEY={api_key}\n")
 
-            # Reload environment to include the new API key
+            lines = []
+            key_written = False
+            if env_path.exists():
+                with open(env_path, 'r') as f:
+                    for line in f:
+                        if line.startswith(f'{key}='):
+                            lines.append(f"{key}={value}\n")
+                            key_written = True
+                        else:
+                            lines.append(line)
+
+            if not key_written:
+                if lines and not lines[-1].endswith('\n'):
+                    lines[-1] = f"{lines[-1]}\n"
+                lines.append(f"{key}={value}\n")
+
+            with open(env_path, 'w') as f:
+                f.writelines(lines)
+
             load_dotenv(dotenv_path=env_path, override=True)
             return True
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save API key: {str(e)}")
             return False
+
+    @staticmethod
+    def save_api_key_mac(api_key):
+        """Save the API key using the shared root .env path on macOS."""
+        return APIKeyManager.save_api_key(api_key)
+
+    @staticmethod
+    def save_api_key(api_key):
+        """Save the API key to the root .env file."""
+        return APIKeyManager.save_env_value("OPENAI_API_KEY", api_key)
     
     @staticmethod
     def load_api_key_mac():
         """Load the API key from the shared root .env path on macOS."""
-        env_path = APIKeyManager.get_env_file_path()
-        if env_path.exists():
-            with open(env_path, 'r') as f:
-                for line in f:
-                    if line.startswith('OPENAI_API_KEY'):
-                        return line.strip().split('=')[1]
-        return None
+        return APIKeyManager.get_env_value("OPENAI_API_KEY")
+
+    @staticmethod
+    def get_elevenlabs_api_key():
+        """Get the ElevenLabs API key without prompting on startup."""
+        return APIKeyManager.get_env_value("ELEVENLABS_API_KEY")
     
     @staticmethod
     def get_api_key(parent=None):
@@ -152,6 +187,25 @@ class APIKeyManager:
                 else:
                     messagebox.showinfo("API Key Updated", "The OpenAI API Key has been updated successfully.")
                 
+                return new_key
+        return None
+
+    @staticmethod
+    def change_elevenlabs_api_key(parent):
+        """Change the ElevenLabs API key."""
+        if hasattr(parent, "prompt_string_modal"):
+            new_key = parent.prompt_string_modal(
+                "ElevenLabs API Key",
+                "Enter new ElevenLabs API Key:",
+                mask_input=True
+            )
+        else:
+            new_key = simpledialog.askstring("ElevenLabs API Key", "Enter new ElevenLabs API Key:", parent=parent)
+
+        if new_key:
+            success = APIKeyManager.save_env_value("ELEVENLABS_API_KEY", new_key)
+            if success:
+                messagebox.showinfo("ElevenLabs API Key Updated", "The ElevenLabs API Key has been updated successfully.")
                 return new_key
         return None
     
